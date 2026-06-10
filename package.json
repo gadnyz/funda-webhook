@@ -1,0 +1,27 @@
+{
+  "name": "webhook-funda",
+  "version": "1.0.0",
+  "description": "MVP WhatsApp Business webhook for Funda, an IoT learning assistant.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node --no-warnings=ExperimentalWarning src/server.js",
+    "dev": "node --watch --no-warnings=ExperimentalWarning src/server.js",
+    "test": "node --no-warnings=ExperimentalWarning --test",
+    "simulate": "node --no-warnings=ExperimentalWarning scripts/simulate-webhook.js",
+    "tunnel": "npx --yes localtunnel --port 3000 --local-host 127.0.0.1",
+    "backup": "node --no-warnings=ExperimentalWarning scripts/backup.js",
+    "delete-user": "node --no-warnings=ExperimentalWarning scripts/delete-user.js"
+  },
+  "keywords": [
+    "whatsapp",
+    "webhook",
+    "funda",
+    "iot",
+    "sqlite"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: funda-whatsapp
+    env: docker
+    plan: starter
+    autoDeploy: false
+    disk:
+      name: funda-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 3000
+      - key: DATABASE_PATH
+        value: /app/data/funda.sqlite
+      - key: BACKUP_DIR
+        value: /app/data/backups
+      - key: ADMIN_PUBLIC
+        value: false
+      - key: WHATSAPP_API_VERSION
+        value: v25.0
+      - key: WHATSAPP_VERIFY_TOKEN
+        sync: false
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_APP_SECRET
+        sync: false
+      - key: ADMIN_TOKEN
+        sync: false
