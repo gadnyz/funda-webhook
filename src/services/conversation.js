@@ -4,16 +4,21 @@ const {
   publicUserName,
   weekStartForDate
 } = require("../utils");
+const { DAILY_QUIZ_QUESTION_COUNT, getLessonForDate, resources: defaultResources } = require("../content/iot");
 
 const MENU_IDS = {
+  DAILY_LESSON: "MENU_DAILY_LESSON",
   DAILY_QUIZ: "MENU_DAILY_QUIZ",
-  WEEKLY_CHALLENGE: "MENU_WEEKLY_CHALLENGE",
-  LEARN_IOT: "MENU_LEARN_IOT",
   RESOURCES: "MENU_RESOURCES",
   SCORE: "MENU_SCORE",
   LEADERBOARD: "MENU_LEADERBOARD",
   HELP: "MENU_HELP",
   MAIN: "MENU_MAIN"
+};
+
+const LEGACY_MENU_IDS = {
+  WEEKLY_CHALLENGE: "MENU_WEEKLY_CHALLENGE",
+  LEARN_IOT: "MENU_LEARN_IOT"
 };
 
 const QUIZ_ANSWER_IDS = {
@@ -40,7 +45,7 @@ function createConversationService({ config, db, whatsapp, logger }) {
       db.updateUserOptOut(user.id, false);
       await whatsapp.sendText(
         user.wa_id,
-        "Votre participation Funda est reactivee. Vous pouvez reprendre l'apprentissage IoT.",
+        "Votre participation Funda est réactivée. Vous pouvez reprendre l'apprentissage IoT.",
         context
       );
       await sendMainMenu(user, context);
@@ -51,7 +56,7 @@ function createConversationService({ config, db, whatsapp, logger }) {
       db.updateUserOptOut(user.id, true);
       await whatsapp.sendText(
         user.wa_id,
-        "Vous etes desabonne des messages Funda. Envoyez START pour reactiver votre participation.",
+        "Vous êtes désabonné des messages Funda. Envoyez START pour réactiver votre participation.",
         context
       );
       return;
@@ -60,7 +65,7 @@ function createConversationService({ config, db, whatsapp, logger }) {
     if (user.opted_out) {
       await whatsapp.sendText(
         user.wa_id,
-        "Votre compte est desabonne. Envoyez START pour reprendre Funda.",
+        "Votre compte est désabonné. Envoyez START pour reprendre Funda.",
         context
       );
       return;
@@ -87,27 +92,39 @@ function createConversationService({ config, db, whatsapp, logger }) {
       return;
     }
 
-    if (commandId === MENU_IDS.DAILY_QUIZ || text.includes("quiz") || text === "1") {
+    if (
+      commandId === MENU_IDS.DAILY_LESSON ||
+      commandId === LEGACY_MENU_IDS.LEARN_IOT ||
+      text.includes("lecon") ||
+      text.includes("apprendre") ||
+      text === "iot" ||
+      text === "1"
+    ) {
+      await sendDailyLesson(user, context);
+      return;
+    }
+
+    if (commandId === MENU_IDS.DAILY_QUIZ || text.includes("quiz") || text === "2") {
       await startOrResumeDailyQuiz(user, context);
       return;
     }
 
-    if (commandId === MENU_IDS.WEEKLY_CHALLENGE || text.includes("challenge") || text === "2") {
-      await sendWeeklyChallenge(user, context);
+    if (commandId === LEGACY_MENU_IDS.WEEKLY_CHALLENGE || text.includes("challenge")) {
+      await whatsapp.sendText(
+        user.wa_id,
+        "Le challenge semaine est remplacé par un parcours plus simple: une leçon du jour, puis un quiz lié à cette leçon.",
+        context
+      );
+      await sendDailyLesson(user, context);
       return;
     }
 
-    if (commandId === MENU_IDS.LEARN_IOT || text.includes("apprendre") || text.includes("iot") || text === "3") {
-      await sendLearningIntro(user, context);
-      return;
-    }
-
-    if (commandId === MENU_IDS.RESOURCES || text.includes("ressource") || text === "4") {
+    if (commandId === MENU_IDS.RESOURCES || text.includes("ressource") || text === "3") {
       await sendResources(user, context);
       return;
     }
 
-    if (commandId === MENU_IDS.SCORE || text.includes("score") || text === "5") {
+    if (commandId === MENU_IDS.SCORE || text.includes("score") || text === "4") {
       await sendScore(user, context);
       return;
     }
@@ -116,7 +133,7 @@ function createConversationService({ config, db, whatsapp, logger }) {
       commandId === MENU_IDS.LEADERBOARD ||
       text.includes("classement") ||
       text.includes("top") ||
-      text === "6"
+      text === "5"
     ) {
       await sendLeaderboard(user, context);
       return;
@@ -152,9 +169,9 @@ function createConversationService({ config, db, whatsapp, logger }) {
       [
         `Bonjour ${publicUserName(user)}, je suis Funda, votre assistant d'apprentissage en ligne.`,
         "",
-        "Funda vous aide a apprendre simplement et facilement grace a des ressources, des quiz et des challenges.",
+        "Funda vous aide à apprendre simplement et facilement grâce à des leçons courtes, des ressources et des quiz.",
         "",
-        "Ce mois-ci, nous apprenons l'IoT: objets connectes, capteurs, MQTT, securite et projets pratiques."
+        "Ce mois-ci, nous apprenons l'IoT: objets connectés, capteurs, MQTT, sécurité et projets pratiques."
       ].join("\n"),
       context
     );
@@ -169,31 +186,26 @@ function createConversationService({ config, db, whatsapp, logger }) {
       {
         header: "Funda",
         body: "Que voulez-vous faire maintenant ?",
-        footer: "Theme mensuel: IoT",
+        footer: "Thème mensuel: IoT",
         buttonText: "Menu",
         sections: [
           {
-            title: "Apprendre",
+            title: "Parcours du jour",
             rows: [
+              {
+                id: MENU_IDS.DAILY_LESSON,
+                title: "Leçon du jour",
+                description: "Titre, compétence et contenu"
+              },
               {
                 id: MENU_IDS.DAILY_QUIZ,
                 title: "Quiz du jour",
-                description: "20 questions IoT aujourd'hui"
-              },
-              {
-                id: MENU_IDS.WEEKLY_CHALLENGE,
-                title: "Challenge semaine",
-                description: "Objectif, bonus et progression"
-              },
-              {
-                id: MENU_IDS.LEARN_IOT,
-                title: "Apprendre l'IoT",
-                description: "Introduction guidee"
+                description: "10 questions liées à la leçon"
               },
               {
                 id: MENU_IDS.RESOURCES,
                 title: "Ressources IoT",
-                description: "Cours, outils, videos et projets"
+                description: "Cours, outils, vidéos et projets"
               }
             ]
           },
@@ -223,28 +235,43 @@ function createConversationService({ config, db, whatsapp, logger }) {
     );
   }
 
-  async function sendLearningIntro(user, context) {
+  async function sendDailyLesson(user, context) {
+    const today = formatDateInTimeZone(new Date(), config.timeZone);
+    const lesson = getLessonForDate(today);
+    const defaultResourceLines = buildDefaultLessonResourceLines(lesson, db);
+    const customResourceLines = buildCustomResourceLines(lesson, db);
+
     await whatsapp.sendText(
       user.wa_id,
       [
-        "L'IoT, ou Internet des objets, relie des objets physiques a des logiciels et plateformes.",
+        "Leçon du jour Funda - IoT",
         "",
-        "Parcours recommande:",
-        "1. Comprendre capteurs et actionneurs",
-        "2. Tester Arduino ou ESP32",
-        "3. Publier des donnees avec MQTT",
-        "4. Visualiser les mesures",
-        "5. Securiser l'objet et ses donnees"
+        lesson.title,
+        "",
+        `Compétence à acquérir: ${lesson.competency}`,
+        "",
+        "Contenu:",
+        ...lesson.content.map((line) => `- ${line}`),
+        "",
+        `À maîtriser: ${lesson.skills.join(", ")}`,
+        "",
+        "Ressources par défaut:",
+        ...defaultResourceLines,
+        "",
+        "Ressources personnalisées ou autres:",
+        ...customResourceLines,
+        "",
+        `Quiz associé: ${DAILY_QUIZ_QUESTION_COUNT} questions sur cette leçon.`
       ].join("\n"),
       context
     );
 
     return whatsapp.sendButtons(
       user.wa_id,
-      "Choisissez la prochaine etape.",
+      "Prochaine étape.",
       [
-        { id: MENU_IDS.RESOURCES, title: "Ressources" },
         { id: MENU_IDS.DAILY_QUIZ, title: "Quiz" },
+        { id: MENU_IDS.RESOURCES, title: "Ressources" },
         { id: MENU_IDS.MAIN, title: "Menu" }
       ],
       context
@@ -262,7 +289,7 @@ function createConversationService({ config, db, whatsapp, logger }) {
       user.wa_id,
       {
         header: "Ressources IoT",
-        body: "Selectionnez une ressource pour recevoir le lien et le contexte.",
+        body: "Sélectionnez une ressource pour recevoir le lien et le contexte.",
         footer: "Funda - IoT",
         buttonText: "Ressources",
         sections: [{ title: "Catalogue", rows }]
@@ -309,6 +336,7 @@ function createConversationService({ config, db, whatsapp, logger }) {
   async function startOrResumeDailyQuiz(user, context) {
     const today = formatDateInTimeZone(new Date(), config.timeZone);
     const weekStart = weekStartForDate(today);
+    const lesson = getLessonForDate(today);
     const quiz = db.ensureDailyQuiz(today, weekStart);
     const attempt = db.getOrCreateAttempt(user.id, quiz.id, quiz.total_questions);
 
@@ -316,7 +344,7 @@ function createConversationService({ config, db, whatsapp, logger }) {
       await whatsapp.sendText(
         user.wa_id,
         [
-          "Vous avez deja termine le quiz du jour.",
+          "Vous avez déjà terminé le quiz du jour.",
           "",
           `Score: ${attempt.score}/${attempt.total_questions}`,
           "Revenez demain pour un nouveau quiz IoT."
@@ -333,7 +361,8 @@ function createConversationService({ config, db, whatsapp, logger }) {
       [
         "Quiz du jour Funda - IoT",
         "",
-        "20 questions. Chaque bonne reponse vaut 1 point.",
+        `Leçon liée: ${lesson.title}`,
+        `${DAILY_QUIZ_QUESTION_COUNT} questions. Chaque bonne réponse vaut 1 point.`,
         "Bonus hebdomadaire: +5 points si vous terminez le quiz du jour.",
         "",
         `Progression actuelle: ${stats.answered}/${attempt.total_questions}`
@@ -368,9 +397,9 @@ function createConversationService({ config, db, whatsapp, logger }) {
     await whatsapp.sendList(
       user.wa_id,
       {
-        header: `Question ${question.position}/20`,
+        header: `Question ${question.position}/${refreshed.total_questions}`,
         body: question.question,
-        buttonText: "Repondre",
+        buttonText: "Répondre",
         sections: [
           {
             title: "Choix",
@@ -394,7 +423,7 @@ function createConversationService({ config, db, whatsapp, logger }) {
     const attempt = db.getOrCreateAttempt(user.id, quiz.id, quiz.total_questions);
 
     if (attempt.status === "completed") {
-      await whatsapp.sendText(user.wa_id, "Le quiz du jour est deja termine.", context);
+      await whatsapp.sendText(user.wa_id, "Le quiz du jour est déjà terminé.", context);
       await sendScore(user, context);
       return;
     }
@@ -420,7 +449,7 @@ function createConversationService({ config, db, whatsapp, logger }) {
     if (!answerResult.inserted) {
       await whatsapp.sendText(
         user.wa_id,
-        "Cette question avait deja une reponse enregistree. Je vous renvoie la prochaine question.",
+        "Cette question avait déjà une réponse enregistrée. Je vous renvoie la prochaine question.",
         context
       );
       await sendCurrentQuestion(user, updatedAttempt, context);
@@ -430,8 +459,8 @@ function createConversationService({ config, db, whatsapp, logger }) {
     await whatsapp.sendText(
       user.wa_id,
       [
-        isCorrect ? "Bonne reponse." : "Pas encore.",
-        `Reponse correcte: ${question.correct_option}`,
+        isCorrect ? "Bonne réponse." : "Pas encore.",
+        `Réponse correcte: ${question.correct_option}`,
         question.explanation,
         "",
         `Score actuel: ${updatedAttempt.score}/${updatedAttempt.total_questions}`
@@ -452,11 +481,11 @@ function createConversationService({ config, db, whatsapp, logger }) {
     await whatsapp.sendText(
       user.wa_id,
       [
-        "Quiz du jour termine.",
+        "Quiz du jour terminé.",
         "",
         `Score du jour: ${attempt.score}/${attempt.total_questions}`,
         `Points hebdomadaires: ${weeklyScore?.points || 0}`,
-        `Quiz termines cette semaine: ${weeklyScore?.quizzes_completed || 0}`,
+        `Quiz terminés cette semaine: ${weeklyScore?.quizzes_completed || 0}`,
         "",
         "Vous pouvez maintenant consulter le classement hebdomadaire."
       ].join("\n"),
@@ -490,45 +519,12 @@ function createConversationService({ config, db, whatsapp, logger }) {
         `Points: ${score?.points || 0}`,
         `Niveau: ${profile.level}`,
         `Badges: ${profile.badges.length > 0 ? profile.badges.join(", ") : "en cours"}`,
-        `Bonnes reponses: ${score?.correct_answers || 0}/${score?.total_answers || 0}`,
-        `Quiz termines: ${score?.quizzes_completed || 0}`,
+        `Bonnes réponses: ${score?.correct_answers || 0}/${score?.total_answers || 0}`,
+        `Quiz terminés: ${score?.quizzes_completed || 0}`,
         `Jours de participation: ${score?.days_participated || 0}/7`,
         "",
-        "Bonus: +5 par quiz termine, +10 si vous participez au moins 5 jours."
+        "Bonus: +5 par quiz terminé, +10 si vous participez au moins 5 jours."
       ].join("\n"),
-      context
-    );
-  }
-
-  async function sendWeeklyChallenge(user, context) {
-    const today = formatDateInTimeZone(new Date(), config.timeZone);
-    const weekStart = weekStartForDate(today);
-    const score = db.recalculateWeeklyScore(user.id, weekStart, "iot");
-
-    await whatsapp.sendText(
-      user.wa_id,
-      [
-        "Challenge hebdomadaire Funda - IoT",
-        "",
-        "Objectif: progresser chaque jour avec 20 questions IoT.",
-        "Le classement public affiche uniquement les 5 meilleurs.",
-        "",
-        `Votre semaine: ${score?.points || 0} points`,
-        `Participation: ${score?.days_participated || 0}/7 jour(s)`,
-        "",
-        "Pour avancer: lancez le quiz du jour."
-      ].join("\n"),
-      context
-    );
-
-    await whatsapp.sendButtons(
-      user.wa_id,
-      "Continuer le challenge.",
-      [
-        { id: MENU_IDS.DAILY_QUIZ, title: "Quiz du jour" },
-        { id: MENU_IDS.LEADERBOARD, title: "Classement" },
-        { id: MENU_IDS.MAIN, title: "Menu" }
-      ],
       context
     );
   }
@@ -541,7 +537,7 @@ function createConversationService({ config, db, whatsapp, logger }) {
 
     const lines = ["Classement Funda - Semaine IoT", ""];
     if (top.length === 0) {
-      lines.push("Aucun score pour le moment. Soyez le premier a faire le quiz du jour.");
+      lines.push("Aucun score pour le moment. Soyez le premier à faire le quiz du jour.");
     } else {
       top.forEach((row, index) => {
         lines.push(`${index + 1}. ${publicUserName(row)} - ${row.points} pts`);
@@ -564,13 +560,14 @@ function createConversationService({ config, db, whatsapp, logger }) {
         "Commandes utiles:",
         "- MENU: afficher le menu",
         "- QUIZ: lancer le quiz du jour",
+        "- LEÇON: recevoir la leçon du jour",
         "- SCORE: voir votre progression",
         "- CLASSEMENT: voir le top 5 hebdomadaire",
         "- RESSOURCES: explorer les contenus IoT",
-        "- STOP: vous desabonner",
+        "- STOP: vous désabonner",
         "- START: reprendre Funda",
         "",
-        "Pendant un quiz, repondez avec A, B, C ou D."
+        "Pendant un quiz, répondez avec A, B, C ou D."
       ].join("\n"),
       context
     );
@@ -578,10 +575,44 @@ function createConversationService({ config, db, whatsapp, logger }) {
 
   return {
     handleIncoming,
+    sendDailyLesson,
     sendLeaderboard,
     sendMainMenu,
     startOrResumeDailyQuiz
   };
+}
+
+function buildDefaultLessonResourceLines(lesson, db) {
+  const lines = lesson.resourceSlugs
+    .map((slug) => db.getResourceBySlug(slug) || defaultResources.find((resource) => resource.slug === slug))
+    .filter(Boolean)
+    .slice(0, 4)
+    .map((resource) => `- ${resource.title}: ${resource.url}`);
+
+  return lines.length > 0 ? lines : ["- Ouvrez Ressources IoT pour consulter le catalogue Funda."];
+}
+
+function buildCustomResourceLines(lesson, db) {
+  const defaultSlugs = new Set(defaultResources.map((resource) => resource.slug));
+  const lessonSlugs = new Set(lesson.resourceSlugs);
+  const allResources = db.listResources("iot", 30);
+  const customResources = allResources
+    .filter((resource) => !defaultSlugs.has(resource.slug))
+    .slice(0, 3);
+
+  if (customResources.length > 0) {
+    return customResources.map((resource) => `- ${resource.title}: ${resource.url}`);
+  }
+
+  const otherResources = allResources
+    .filter((resource) => defaultSlugs.has(resource.slug) && !lessonSlugs.has(resource.slug))
+    .slice(0, 2);
+
+  if (otherResources.length > 0) {
+    return otherResources.map((resource) => `- Autre: ${resource.title}: ${resource.url}`);
+  }
+
+  return ["- Ajoutez vos ressources depuis l'admin, ou ouvrez Ressources IoT pour explorer le catalogue."];
 }
 
 function isGreeting(text) {
@@ -611,14 +642,14 @@ function buildLearningProfile(score) {
   const completed = Number(score?.quizzes_completed || 0);
   const correct = Number(score?.correct_answers || 0);
 
-  let level = "debutant";
-  if (points >= 90) level = "avance";
-  else if (points >= 40) level = "intermediaire";
+  let level = "débutant";
+  if (points >= 90) level = "avancé";
+  else if (points >= 40) level = "intermédiaire";
 
   const badges = [];
-  if (completed >= 1) badges.push("Quiz termine");
-  if (days >= 3) badges.push("Regulier");
-  if (days >= 5) badges.push("Discipline");
+  if (completed >= 1) badges.push("Quiz terminé");
+  if (days >= 3) badges.push("Régulier");
+  if (days >= 5) badges.push("Discipliné");
   if (correct >= 50) badges.push("Explorateur IoT");
   if (points >= 100) badges.push("Expert IoT");
 

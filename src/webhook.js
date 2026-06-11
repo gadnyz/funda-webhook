@@ -45,7 +45,7 @@ function createWebhookProcessor({ config, db, whatsapp, logger }) {
           });
 
           if (!record.inserted) {
-            logger.info("Message WhatsApp deja traite", { wamid: rawMessage.id });
+            logger.info("Message WhatsApp déjà traité", { wamid: rawMessage.id });
             continue;
           }
 

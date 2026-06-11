@@ -2,7 +2,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
-const { resources, selectQuestionsForDate } = require("./content/iot");
+const { DAILY_QUIZ_QUESTION_COUNT, getLessonForDate, resources, selectQuestionsForDate } = require("./content/iot");
 const { addDays, nowIso, safeJson } = require("./utils");
 
 function openDatabase(config) {
@@ -115,7 +115,7 @@ function migrate(db) {
       week_start TEXT NOT NULL,
       topic TEXT NOT NULL,
       title TEXT NOT NULL,
-      total_questions INTEGER NOT NULL DEFAULT 20,
+      total_questions INTEGER NOT NULL DEFAULT 10,
       is_active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -132,7 +132,7 @@ function migrate(db) {
       option_d TEXT NOT NULL,
       correct_option TEXT NOT NULL CHECK(correct_option IN ('A', 'B', 'C', 'D')),
       explanation TEXT NOT NULL,
-      difficulty TEXT NOT NULL DEFAULT 'debutant',
+      difficulty TEXT NOT NULL DEFAULT 'débutant',
       created_at TEXT NOT NULL,
       UNIQUE(quiz_id, position),
       FOREIGN KEY(quiz_id) REFERENCES daily_quizzes(id) ON DELETE CASCADE
@@ -146,7 +146,7 @@ function migrate(db) {
       started_at TEXT NOT NULL,
       completed_at TEXT,
       score INTEGER NOT NULL DEFAULT 0,
-      total_questions INTEGER NOT NULL DEFAULT 20,
+      total_questions INTEGER NOT NULL DEFAULT 10,
       current_position INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -215,7 +215,7 @@ function migrate(db) {
   addColumnIfMissing(db, "users", "opted_out", "INTEGER NOT NULL DEFAULT 0");
   addColumnIfMissing(db, "users", "opted_out_at", "TEXT");
   addColumnIfMissing(db, "users", "consented_at", "TEXT");
-  addColumnIfMissing(db, "users", "learning_level", "TEXT NOT NULL DEFAULT 'debutant'");
+  addColumnIfMissing(db, "users", "learning_level", "TEXT NOT NULL DEFAULT 'débutant'");
   addColumnIfMissing(db, "users", "badges", "TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing(db, "message_statuses", "error_code", "TEXT");
   addColumnIfMissing(db, "message_statuses", "error_title", "TEXT");
@@ -238,7 +238,15 @@ function seedResources(db) {
       slug, topic, title, level, type, description, url, sort_order, created_at, updated_at
     )
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(slug) DO NOTHING
+    ON CONFLICT(slug) DO UPDATE SET
+      topic = excluded.topic,
+      title = excluded.title,
+      level = excluded.level,
+      type = excluded.type,
+      description = excluded.description,
+      url = excluded.url,
+      sort_order = excluded.sort_order,
+      updated_at = excluded.updated_at
   `);
 
   for (const resource of resources) {
@@ -264,22 +272,22 @@ function seedTemplates(db) {
       name: "funda_quiz_du_jour",
       category: "UTILITY",
       status: "draft",
-      body: "Bonjour {{1}}, le quiz IoT du jour est disponible sur Funda. Repondez QUIZ pour commencer.",
+      body: "Bonjour {{1}}, le quiz IoT du jour est disponible sur Funda. Répondez QUIZ pour commencer.",
+      example: { "1": "Amina" }
+    },
+    {
+      name: "funda_lecon_du_jour",
+      category: "UTILITY",
+      status: "draft",
+      body: "Bonjour {{1}}, la leçon IoT du jour est disponible sur Funda. Répondez LEÇON pour apprendre puis faire le quiz.",
       example: { "1": "Amina" }
     },
     {
       name: "funda_score_hebdo",
       category: "UTILITY",
       status: "draft",
-      body: "Votre score Funda de la semaine est de {{1}} points. Repondez CLASSEMENT pour voir le top 5.",
+      body: "Votre score Funda de la semaine est de {{1}} points. Répondez CLASSEMENT pour voir le top 5.",
       example: { "1": "72" }
-    },
-    {
-      name: "funda_challenge_iot",
-      category: "UTILITY",
-      status: "draft",
-      body: "Nouveau challenge IoT Funda: 20 questions par jour pour progresser. Repondez MENU pour participer.",
-      example: {}
     }
   ];
 
@@ -288,7 +296,12 @@ function seedTemplates(db) {
       name, language, category, status, body, example_json, created_at, updated_at
     )
     VALUES (?, 'fr', ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(name) DO NOTHING
+    ON CONFLICT(name) DO UPDATE SET
+      category = excluded.category,
+      status = excluded.status,
+      body = excluded.body,
+      example_json = excluded.example_json,
+      updated_at = excluded.updated_at
   `);
 
   for (const template of templates) {
@@ -302,6 +315,8 @@ function seedTemplates(db) {
       now
     );
   }
+
+  db.prepare("DELETE FROM whatsapp_templates WHERE name = 'funda_challenge_iot'").run();
 }
 
 function createRepository(db) {
@@ -498,7 +513,7 @@ function createRepository(db) {
         resource.slug,
         resource.topic || "iot",
         resource.title,
-        resource.level || "debutant",
+        resource.level || "débutant",
         resource.type || "cours",
         resource.description,
         resource.url,
@@ -556,15 +571,58 @@ function createRepository(db) {
     ensureDailyQuiz(quizDate, weekStart) {
       let quiz = db.prepare("SELECT * FROM daily_quizzes WHERE quiz_date = ?").get(quizDate);
       const now = nowIso();
+      const lesson = getLessonForDate(quizDate);
+      const totalQuestions = DAILY_QUIZ_QUESTION_COUNT;
+      const title = `Quiz du jour - ${lesson.title}`;
 
       if (!quiz) {
         const result = db.prepare(`
           INSERT INTO daily_quizzes (
             quiz_date, week_start, topic, title, total_questions, created_at, updated_at
           )
-          VALUES (?, ?, 'iot', ?, 20, ?, ?)
-        `).run(quizDate, weekStart, `Quiz IoT du ${quizDate}`, now, now);
+          VALUES (?, ?, 'iot', ?, ?, ?, ?)
+        `).run(quizDate, weekStart, title, totalQuestions, now, now);
         quiz = db.prepare("SELECT * FROM daily_quizzes WHERE id = ?").get(Number(result.lastInsertRowid));
+      } else if (quiz.total_questions !== totalQuestions || quiz.title !== title) {
+        const attemptCount = db.prepare("SELECT COUNT(*) AS count FROM quiz_attempts WHERE quiz_id = ?").get(quiz.id).count;
+        const completedCount = db.prepare(`
+          SELECT COUNT(*) AS count
+          FROM quiz_attempts
+          WHERE quiz_id = ? AND status = 'completed'
+        `).get(quiz.id).count;
+        const answeredCount = db.prepare(`
+          SELECT COUNT(*) AS count
+          FROM quiz_answers qa
+          JOIN quiz_attempts qat ON qat.id = qa.attempt_id
+          WHERE qat.quiz_id = ?
+        `).get(quiz.id).count;
+
+        if (attemptCount === 0) {
+          db.prepare("DELETE FROM quiz_questions WHERE quiz_id = ?").run(quiz.id);
+          db.prepare(`
+            UPDATE daily_quizzes
+            SET title = ?, total_questions = ?, updated_at = ?
+            WHERE id = ?
+          `).run(title, totalQuestions, now, quiz.id);
+        } else if (completedCount === 0 && answeredCount <= totalQuestions) {
+          db.prepare("DELETE FROM quiz_questions WHERE quiz_id = ? AND position > ?").run(quiz.id, totalQuestions);
+          db.prepare(`
+            UPDATE daily_quizzes
+            SET title = ?, total_questions = ?, updated_at = ?
+            WHERE id = ?
+          `).run(title, totalQuestions, now, quiz.id);
+          db.prepare(`
+            UPDATE quiz_attempts
+            SET total_questions = ?,
+                current_position = CASE WHEN current_position > ? THEN ? ELSE current_position END,
+                updated_at = ?
+            WHERE quiz_id = ? AND status = 'in_progress'
+          `).run(totalQuestions, totalQuestions, totalQuestions, now, quiz.id);
+        } else if (quiz.title !== title) {
+          db.prepare("UPDATE daily_quizzes SET title = ?, updated_at = ? WHERE id = ?").run(title, now, quiz.id);
+        }
+
+        quiz = db.prepare("SELECT * FROM daily_quizzes WHERE id = ?").get(quiz.id);
       }
 
       const count = db.prepare("SELECT COUNT(*) AS count FROM quiz_questions WHERE quiz_id = ?").get(quiz.id).count;
@@ -588,7 +646,7 @@ function createRepository(db) {
             item.options.D,
             item.correct,
             item.explanation,
-            item.difficulty || "debutant",
+            item.difficulty || "débutant",
             nowIso()
           );
         });
@@ -927,7 +985,7 @@ function createRepository(db) {
     createBackup(targetPath) {
       fs.mkdirSync(path.dirname(targetPath), { recursive: true });
       if (fs.existsSync(targetPath)) {
-        throw new Error(`Le fichier de backup existe deja: ${targetPath}`);
+        throw new Error(`Le fichier de backup existe déjà: ${targetPath}`);
       }
 
       db.exec(`VACUUM INTO ${quoteSqlString(targetPath)}`);

@@ -1,4 +1,5 @@
 const path = require("node:path");
+const { listMetaReviewTests, runMetaReviewTest } = require("./metaTests");
 const { formatDateInTimeZone, nowIso, weekStartForDate } = require("./utils");
 
 function isAdminPath(pathname) {
@@ -10,7 +11,7 @@ async function handleAdminRequest({ req, res, url, config, db, sendJson, sendTex
     if (url.pathname === "/admin") {
       return sendText(res, 401, renderUnauthorized(), "text/html; charset=utf-8");
     }
-    return sendJson(res, 401, { error: "Admin non autorise" });
+    return sendJson(res, 401, { error: "Admin non autorisé" });
   }
 
   if (req.method === "GET" && url.pathname === "/admin") {
@@ -32,6 +33,29 @@ async function handleAdminRequest({ req, res, url, config, db, sendJson, sendTex
       recentErrors: db.listWebhookErrors(10),
       statusErrors: db.listStatusErrors(10)
     });
+  }
+
+  if (req.method === "GET" && url.pathname === "/admin/api/meta-tests") {
+    return sendJson(res, 200, {
+      generatedAt: nowIso(),
+      tests: listMetaReviewTests(config)
+    });
+  }
+
+  const metaTestMatch = url.pathname.match(/^\/admin\/api\/meta-tests\/([^/]+)$/);
+  if (req.method === "POST" && metaTestMatch) {
+    const testId = decodeURIComponent(metaTestMatch[1]);
+    const body = await readJsonBody(req, readRequestBody);
+    const result = await runMetaReviewTest({ testId, config, body });
+    db.recordAdminEvent("meta_review_test.run", {
+      testId,
+      permission: result.permission || null,
+      ok: Boolean(result.ok),
+      status: result.status || null,
+      missing: result.missing || [],
+      endpoint: result.endpoint || null
+    });
+    return sendJson(res, 200, result);
   }
 
   if (req.method === "GET" && (url.pathname === "/admin/api/stats" || url.pathname === "/admin/stats")) {
@@ -168,7 +192,7 @@ function renderUnauthorized() {
 <head><meta charset="utf-8"><title>Funda Admin</title></head>
 <body>
   <h1>Funda Admin</h1>
-  <p>Acces admin refuse. Ajoutez <code>?token=ADMIN_TOKEN</code> ou utilisez l'en-tete <code>x-admin-token</code>.</p>
+  <p>Accès admin refusé. Ajoutez <code>?token=ADMIN_TOKEN</code> ou utilisez l'en-tête <code>x-admin-token</code>.</p>
 </body>
 </html>`;
 }
@@ -199,7 +223,18 @@ function renderAdminPage(config) {
     textarea { min-height: 86px; resize: vertical; }
     button { background: #0f766e; color: white; border: 0; padding: 10px 14px; border-radius: 6px; cursor: pointer; }
     button.secondary { background: #334155; }
+    button:disabled { opacity: .55; cursor: wait; }
+    label { color: #334155; font-size: 13px; font-weight: 700; }
+    label input { margin-top: 5px; font-weight: 400; }
     .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+    .review-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(245px, 1fr)); gap: 12px; margin-top: 12px; }
+    .review-card { border: 1px solid #d7dee8; border-radius: 8px; padding: 12px; background: #fbfdff; }
+    .review-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+    .review-card h3 { margin: 0 0 8px; font-size: 15px; }
+    .badge { border-radius: 999px; padding: 3px 8px; font-size: 12px; white-space: nowrap; background: #e2e8f0; color: #334155; }
+    .badge.ready { background: #dcfce7; color: #166534; }
+    .badge.missing { background: #fef3c7; color: #92400e; }
+    .test-result { margin-top: 12px; max-height: 360px; overflow: auto; white-space: pre-wrap; background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: 6px; font-size: 12px; }
     .muted { color: #64748b; font-size: 13px; }
     .danger { color: #b91c1c; }
     code { background: #e2e8f0; padding: 2px 5px; border-radius: 4px; }
@@ -215,8 +250,32 @@ function renderAdminPage(config) {
 
     <section class="panel">
       <h2>Actions</h2>
-      <button id="backupButton">Creer un backup SQLite</button>
+      <button id="backupButton">Créer un backup SQLite</button>
       <span class="muted" id="backupResult"></span>
+    </section>
+
+    <section class="panel">
+      <h2>Tests Meta Review</h2>
+      <p class="muted">Lancez les appels Graph API nécessaires pour faire monter les compteurs de test avant publication.</p>
+      <div class="form-grid">
+        <label>Token utilisateur Facebook
+          <input id="metaUserToken" type="password" autocomplete="off" placeholder="Pour email et public_profile">
+        </label>
+        <label>WhatsApp Business Account ID
+          <input id="metaWabaId" placeholder="Optionnel si déjà dans .env">
+        </label>
+        <label>Business Manager ID
+          <input id="metaBusinessId" placeholder="Optionnel">
+        </label>
+        <label>Meta App ID
+          <input id="metaAppId" placeholder="Optionnel si déjà dans .env">
+        </label>
+        <label>Numéro WhatsApp de test
+          <input id="metaRecipientWaId" placeholder="Ex: 225XXXXXXXXXX">
+        </label>
+      </div>
+      <div id="metaTests" class="review-grid"></div>
+      <pre id="metaTestResult" class="test-result">Aucun test lancé.</pre>
     </section>
 
     <section class="panel">
@@ -230,9 +289,9 @@ function renderAdminPage(config) {
         <input name="slug" placeholder="slug unique">
         <input name="title" placeholder="titre">
         <select name="level">
-          <option value="debutant">debutant</option>
-          <option value="intermediaire">intermediaire</option>
-          <option value="avance">avance</option>
+          <option value="débutant">débutant</option>
+          <option value="intermédiaire">intermédiaire</option>
+          <option value="avancé">avancé</option>
         </select>
         <input name="type" placeholder="cours, outil, projet">
         <input name="url" placeholder="https://...">
@@ -266,12 +325,12 @@ function renderAdminPage(config) {
     </section>
 
     <section class="panel">
-      <h2>Utilisateurs recents</h2>
+      <h2>Utilisateurs récents</h2>
       <div id="users"></div>
     </section>
 
     <section class="panel">
-      <h2>Messages recents</h2>
+      <h2>Messages récents</h2>
       <div id="messages"></div>
     </section>
 
@@ -299,10 +358,64 @@ function renderAdminPage(config) {
     }
 
     function table(rows, columns) {
-      if (!rows || rows.length === 0) return "<p class='muted'>Aucune donnee.</p>";
+      if (!rows || rows.length === 0) return "<p class='muted'>Aucune donnée.</p>";
       return "<table><thead><tr>" + columns.map(c => "<th>" + c.label + "</th>").join("") + "</tr></thead><tbody>" +
         rows.map(row => "<tr>" + columns.map(c => "<td>" + escapeHtml(String(row[c.key] ?? "")) + "</td>").join("") + "</tr>").join("") +
         "</tbody></table>";
+    }
+
+    function renderMetaTest(test) {
+      const missing = test.missing && test.missing.length > 0
+        ? "Manquant: " + test.missing.map(escapeHtml).join(", ")
+        : "Prêt à lancer.";
+      const badgeClass = test.ready ? "ready" : "missing";
+      const badgeText = test.ready ? "Prêt" : "À compléter";
+      const buttonText = test.requiresConfirmation ? "Envoyer test" : "Lancer test";
+      return "<article class='review-card'>" +
+        "<div class='review-head'><h3>" + escapeHtml(test.label) + "</h3><span class='badge " + badgeClass + "'>" + badgeText + "</span></div>" +
+        "<p class='muted'>" + escapeHtml(test.description) + "</p>" +
+        "<p class='muted'><code>" + escapeHtml(test.permission) + "</code></p>" +
+        "<p class='muted'>" + missing + "</p>" +
+        "<button data-test-id='" + escapeHtml(test.id) + "' data-confirm='" + String(Boolean(test.requiresConfirmation)) + "'>" + buttonText + "</button>" +
+      "</article>";
+    }
+
+    function metaPayload(confirmSend = false) {
+      return {
+        userAccessToken: document.getElementById("metaUserToken").value.trim(),
+        whatsappBusinessAccountId: document.getElementById("metaWabaId").value.trim(),
+        businessId: document.getElementById("metaBusinessId").value.trim(),
+        appId: document.getElementById("metaAppId").value.trim(),
+        testRecipientWaId: document.getElementById("metaRecipientWaId").value.trim(),
+        confirmSend
+      };
+    }
+
+    async function loadMetaTests() {
+      const data = await api("/admin/api/meta-tests");
+      document.getElementById("metaTests").innerHTML = data.tests.map(renderMetaTest).join("");
+    }
+
+    async function runMetaTest(button) {
+      const testId = button.dataset.testId;
+      const requiresConfirmation = button.dataset.confirm === "true";
+      if (requiresConfirmation && !confirm("Envoyer un vrai message WhatsApp au numéro de test ?")) return;
+
+      button.disabled = true;
+      const resultBox = document.getElementById("metaTestResult");
+      resultBox.textContent = "Test en cours: " + testId + "...";
+      try {
+        const result = await api("/admin/api/meta-tests/" + encodeURIComponent(testId), {
+          method: "POST",
+          body: JSON.stringify(metaPayload(requiresConfirmation))
+        });
+        resultBox.textContent = JSON.stringify(result, null, 2);
+        await loadMetaTests();
+      } catch (error) {
+        resultBox.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
     }
 
     function escapeHtml(value) {
@@ -316,7 +429,7 @@ function renderAdminPage(config) {
         ["Utilisateurs", metrics.users],
         ["Actifs 24h", metrics.activeUsers24h],
         ["Messages in/out", metrics.inboundMessages + " / " + metrics.outboundMessages],
-        ["Quiz termines", metrics.completedAttempts],
+        ["Quiz terminés", metrics.completedAttempts],
         ["Desabonnes", metrics.optedOutUsers],
         ["Erreurs", metrics.webhookErrors + metrics.failedMessageStatuses]
       ].map(([label, value]) => "<div class='panel'><div class='muted'>" + label + "</div><div class='metric'>" + value + "</div></div>").join("");
@@ -324,7 +437,7 @@ function renderAdminPage(config) {
       document.getElementById("leaderboard").innerHTML = table(overview.leaderboard, [
         { key: "display_name", label: "Nom" },
         { key: "points", label: "Points" },
-        { key: "correct_answers", label: "Bonnes reponses" },
+        { key: "correct_answers", label: "Bonnes réponses" },
         { key: "days_participated", label: "Jours" }
       ]);
       document.getElementById("templates").innerHTML = table(overview.templates, [
@@ -358,13 +471,15 @@ function renderAdminPage(config) {
         { key: "received_at", label: "Date" },
         { key: "error", label: "Erreur" }
       ]);
+
+      await loadMetaTests();
     }
 
     document.getElementById("resourceForm").addEventListener("submit", async (event) => {
       event.preventDefault();
       const body = Object.fromEntries(new FormData(event.target).entries());
       const result = await api("/admin/api/resources", { method: "POST", body: JSON.stringify(body) });
-      document.getElementById("resourceResult").textContent = "Ressource enregistree: " + result.resource.slug;
+      document.getElementById("resourceResult").textContent = "Ressource enregistrée: " + result.resource.slug;
       await load();
     });
 
@@ -377,7 +492,13 @@ function renderAdminPage(config) {
 
     document.getElementById("backupButton").addEventListener("click", async () => {
       const result = await api("/admin/api/backup", { method: "POST", body: "{}" });
-      document.getElementById("backupResult").textContent = "Backup cree: " + result.backup.path;
+      document.getElementById("backupResult").textContent = "Backup créé: " + result.backup.path;
+    });
+
+    document.getElementById("metaTests").addEventListener("click", async (event) => {
+      const button = event.target.closest("button[data-test-id]");
+      if (!button) return;
+      await runMetaTest(button);
     });
 
     load().catch(error => {

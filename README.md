@@ -1,17 +1,18 @@
 # Funda WhatsApp MVP
 
-Funda est un assistant WhatsApp Business d'apprentissage en ligne. Ce MVP se concentre sur la thematique IoT avec:
+Funda est un assistant WhatsApp Business d'apprentissage en ligne. Ce MVP se concentre sur la thématique IoT avec:
 
 - webhook WhatsApp Cloud API complet;
-- accueil Funda en francais;
+- accueil Funda en français;
 - menu interactif WhatsApp;
+- leçon du jour avec compétence à acquérir;
 - ressources IoT;
-- quiz quotidien de 20 questions;
+- quiz quotidien de 10 questions liées à la leçon;
 - score hebdomadaire;
-- classement public limite au top 5;
+- classement public limité au top 5;
 - commandes `STOP` et `START`;
 - dashboard admin;
-- templates WhatsApp a preparer dans Meta;
+- templates WhatsApp à préparer dans Meta;
 - sauvegarde SQLite;
 - monitoring des erreurs;
 - stockage SQLite;
@@ -27,7 +28,7 @@ Funda est un assistant WhatsApp Business d'apprentissage en ligne. Ce MVP se con
 - `WHATSAPP_APP_SECRET`
 - Une URL publique pour le webhook, par exemple via ngrok en local
 
-Ce projet n'utilise pas de dependances npm externes. SQLite est gere via `node:sqlite`.
+Ce projet n'utilise pas de dépendances npm externes. SQLite est géré via `node:sqlite`.
 
 ## Installation
 
@@ -47,7 +48,13 @@ WHATSAPP_VERIFY_TOKEN=un-token-secret-a-copier-dans-meta
 WHATSAPP_ACCESS_TOKEN=EAAG...
 WHATSAPP_PHONE_NUMBER_ID=123456789
 WHATSAPP_APP_SECRET=...
-WHATSAPP_API_VERSION=v23.0
+WHATSAPP_API_VERSION=v25.0
+
+META_GRAPH_API_VERSION=v25.0
+META_APP_ID=123456789
+META_BUSINESS_ID=123456789
+WHATSAPP_BUSINESS_ACCOUNT_ID=123456789
+WHATSAPP_TEST_RECIPIENT_WA_ID=225XXXXXXXXXX
 
 DATABASE_PATH=./data/funda.sqlite
 BACKUP_DIR=./data/backups
@@ -61,13 +68,13 @@ Lancer le serveur:
 npm run start
 ```
 
-Verifier:
+Vérifier:
 
 ```powershell
 Invoke-RestMethod http://localhost:3000/health
 ```
 
-En `development`, si le fichier SQLite configure est indisponible, le serveur bascule vers une base temporaire et affiche un avertissement. En `production`, cette erreur reste bloquante pour eviter une perte de donnees silencieuse.
+En `development`, si le fichier SQLite configuré est indisponible, le serveur bascule vers une base temporaire et affiche un avertissement. En `production`, cette erreur reste bloquante pour éviter une perte de données silencieuse.
 
 ## Configuration Meta WhatsApp
 
@@ -93,7 +100,7 @@ Puis utiliser:
 https://xxxx.ngrok-free.app/webhook
 ```
 
-Si ngrok ne s'installe pas ou si Chocolatey echoue au telechargement, utiliser le tunnel de secours:
+Si ngrok ne s'installe pas ou si Chocolatey échoue au téléchargement, utiliser le tunnel de secours:
 
 ```powershell
 npm run tunnel
@@ -113,7 +120,7 @@ https://xxxxx.loca.lt/webhook
 
 4. Copier dans Meta le meme `WHATSAPP_VERIFY_TOKEN` que dans `.env`.
 5. S'abonner au champ WhatsApp `messages`.
-6. Envoyer un message de test au numero WhatsApp Business.
+6. Envoyer un message de test au numéro WhatsApp Business.
 
 ## Routes
 
@@ -130,6 +137,8 @@ GET  /admin/api/resources
 POST /admin/api/resources
 GET  /admin/api/templates
 POST /admin/api/templates
+GET  /admin/api/meta-tests
+POST /admin/api/meta-tests/:testId
 POST /admin/api/backup
 GET  /admin/leaderboard
 GET  /admin/stats
@@ -144,9 +153,9 @@ GET  /admin/stats
 `POST /webhook` recoit:
 
 - messages entrants;
-- reponses a boutons/listes;
+- réponses à boutons/listes;
 - statuts des messages;
-- erreurs et metadonnees WhatsApp.
+- erreurs et métadonnées WhatsApp.
 
 Les routes `/admin/*` sont publiques seulement si `ADMIN_PUBLIC=true` en development. En production, elles exigent `ADMIN_TOKEN`, soit avec:
 
@@ -176,15 +185,51 @@ https://votre-domaine.com/admin?token=VOTRE_ADMIN_TOKEN
 
 Le dashboard permet de voir:
 
-- utilisateurs recents;
+- utilisateurs récents;
 - messages entrants/sortants;
 - top 5 hebdomadaire;
-- quiz recents;
+- quiz récents;
 - templates WhatsApp;
-- erreurs webhook et statuts echoues;
-- creation de backups SQLite.
+- erreurs webhook et statuts échoués;
+- création de backups SQLite.
 
 Il permet aussi d'ajouter ou modifier les ressources IoT et les templates internes de suivi.
+
+## Tests Meta Review Avant Publication
+
+Le dashboard contient une section `Tests Meta Review` pour déclencher les appels API que Meta affiche dans la page de publication:
+
+- `whatsapp_business_manage_events`: lecture des apps abonnées au WABA;
+- `manage_app_solution`: lecture de l'application Meta avec le token système;
+- `email`: lecture du champ email avec un token utilisateur Facebook;
+- `public_profile`: lecture du profil public avec un token utilisateur Facebook;
+- `business_management`: lecture des Business Managers accessibles;
+- `whatsapp_business_management`: lecture des numéros du WABA;
+- `whatsapp_business_messaging`: envoi optionnel d'un vrai message de test.
+
+Variables utiles dans `.env`:
+
+```env
+META_GRAPH_API_VERSION=v25.0
+META_APP_ID=...
+META_BUSINESS_ID=...
+WHATSAPP_BUSINESS_ACCOUNT_ID=...
+WHATSAPP_TEST_RECIPIENT_WA_ID=...
+```
+
+`business_management`, `whatsapp_business_management`, `whatsapp_business_manage_events`, `manage_app_solution` et `whatsapp_business_messaging` utilisent `WHATSAPP_ACCESS_TOKEN`, donc le token permanent de l'utilisateur système.
+
+`email` et `public_profile` utilisent un token utilisateur Facebook, pas le token système WhatsApp. Pour éviter de le stocker, colle-le directement dans le champ `Token utilisateur Facebook` du dashboard, lance les deux tests, puis ferme la page. Si tu veux le préconfigurer temporairement, utilise:
+
+```env
+FACEBOOK_TEST_USER_ACCESS_TOKEN=...
+```
+
+Après modification de `.env`, redémarrer le backend:
+
+```powershell
+npm run start
+```
 
 ## Comportement WhatsApp
 
@@ -192,58 +237,64 @@ Premier contact:
 
 ```text
 Bonjour, je suis Funda, votre assistant d'apprentissage en ligne.
-Funda vous aide a apprendre simplement et facilement grace a des ressources, des quiz et des challenges.
-Ce mois-ci, nous apprenons l'IoT.
+Funda vous aide à apprendre simplement et facilement grâce à des leçons courtes, des ressources et des quiz.
+Ce mois-ci, nous apprenons l'IoT: objets connectés, capteurs, MQTT, sécurité et projets pratiques.
 ```
 
 Menu principal:
 
+- Leçon du jour
 - Quiz du jour
-- Challenge semaine
-- Apprendre l'IoT
 - Ressources IoT
 - Mon score
 - Classement top 5
 - Aide
 
-Le quiz du jour contient 20 questions. WhatsApp ne permet que 3 boutons rapides par message, donc les reponses A/B/C/D sont envoyees sous forme de liste interactive.
+Parcours quotidien:
+
+1. Leçon du jour: titre, compétence à acquérir, contenu court et ressources.
+2. Ressources: liens par défaut, ressources personnalisées ajoutées dans l'admin et autres ressources utiles.
+3. Quiz du jour: 10 questions liées à la leçon apprise.
+
+WhatsApp ne permet que 3 boutons rapides par message, donc les réponses A/B/C/D sont envoyées sous forme de liste interactive.
 
 Commandes utiles:
 
 - `MENU`: afficher le menu;
+- `LEÇON`: recevoir la leçon du jour;
 - `QUIZ`: lancer ou reprendre le quiz du jour;
 - `SCORE`: voir son score et son niveau;
 - `CLASSEMENT`: voir le top 5;
-- `STOP`: se desabonner;
+- `STOP`: se désabonner;
 - `START`: reprendre Funda.
 
 ## Scoring
 
 Score hebdomadaire:
 
-- `+1` point par bonne reponse;
-- `+5` points par quiz quotidien termine;
+- `+1` point par bonne réponse;
+- `+5` points par quiz quotidien terminé;
 - `+10` points bonus si l'utilisateur participe au moins 5 jours dans la semaine.
 
 Le classement public affiche uniquement les 5 meilleurs utilisateurs de la semaine. L'utilisateur voit toujours son propre score.
 
 Funda attribue aussi un niveau simple:
 
-- `debutant`;
-- `intermediaire`;
-- `avance`.
+- `débutant`;
+- `intermédiaire`;
+- `avancé`.
 
-Des badges sont calcules selon la regularite, les quiz termines et les bonnes reponses.
+Des badges sont calculés selon la régularité, les quiz terminés et les bonnes réponses.
 
 ## Templates WhatsApp
 
 Le code contient les templates internes suivants comme base de travail:
 
+- `funda_lecon_du_jour`;
 - `funda_quiz_du_jour`;
-- `funda_score_hebdo`;
-- `funda_challenge_iot`.
+- `funda_score_hebdo`.
 
-Ils doivent etre crees et approuves dans Meta avant tout envoi hors fenetre WhatsApp de 24h. Le dashboard sert a suivre leur nom, statut et texte, mais l'approbation reste faite dans Meta.
+Ils doivent être créés et approuvés dans Meta avant tout envoi hors fenêtre WhatsApp de 24h. Le dashboard sert à suivre leur nom, statut et texte, mais l'approbation reste faite dans Meta.
 
 ## Sauvegarde
 
@@ -259,11 +310,11 @@ Ou depuis le dashboard:
 POST /admin/api/backup
 ```
 
-Les backups sont crees dans `BACKUP_DIR`.
+Les backups sont créés dans `BACKUP_DIR`.
 
 ## Test Local Sans WhatsApp
 
-Si `WHATSAPP_ACCESS_TOKEN` ou `WHATSAPP_PHONE_NUMBER_ID` manquent, le projet passe automatiquement en dry-run: les messages sortants sont enregistres en base au lieu d'etre envoyes a Meta.
+Si `WHATSAPP_ACCESS_TOKEN` ou `WHATSAPP_PHONE_NUMBER_ID` manquent, le projet passe automatiquement en dry-run: les messages sortants sont enregistrés en base au lieu d'être envoyés à Meta.
 
 Simulation:
 
@@ -293,7 +344,7 @@ Procfile
 Render avec disque persistant:
 
 1. Pousser le repo.
-2. Creer un Web Service Docker.
+2. Créer un Web Service Docker.
 3. Monter un disque persistant sur `/app/data`.
 4. Configurer les variables:
    - `APP_ENV=production`
@@ -329,5 +380,5 @@ src/content/iot.js           Ressources et banque de questions IoT
 - Definir `ADMIN_TOKEN` et laisser `ADMIN_PUBLIC=false`.
 - Deployer sur une plateforme avec disque persistant si SQLite est conserve.
 - Render, Railway ou un VPS conviennent mieux que Vercel pour SQLite persistant.
-- Pour les relances automatiques hors fenetre WhatsApp de 24h, creer des message templates approuves par Meta.
+- Pour les relances automatiques hors fenêtre WhatsApp de 24h, créer des message templates approuvés par Meta.
 - Si un token Meta a ete copie dans un fichier partage, le revoquer et en generer un nouveau.

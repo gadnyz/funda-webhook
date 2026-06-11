@@ -75,6 +75,16 @@ function loadConfig(env = process.env) {
       appSecret: readSecret(env.WHATSAPP_APP_SECRET),
       apiVersion: env.WHATSAPP_API_VERSION || "v23.0",
       dryRun
+    },
+    meta: {
+      graphApiVersion: env.META_GRAPH_API_VERSION || env.WHATSAPP_API_VERSION || "v23.0",
+      appId: readSecret(env.META_APP_ID),
+      businessId: readSecret(env.META_BUSINESS_ID),
+      whatsappBusinessAccountId: readSecret(
+        env.WHATSAPP_BUSINESS_ACCOUNT_ID || env.META_WABA_ID || env.WABA_ID
+      ),
+      testRecipientWaId: readSecret(env.WHATSAPP_TEST_RECIPIENT_WA_ID),
+      facebookUserAccessToken: readSecret(env.FACEBOOK_TEST_USER_ACCESS_TOKEN)
     }
   };
 

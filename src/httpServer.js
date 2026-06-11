@@ -117,7 +117,7 @@ async function handleWebhookEvent({ req, res, config, db, processor, logger }) {
     try {
       await processor.processPayload(payload, eventId);
     } catch (error) {
-      logger.error("Traitement webhook echoue", {
+      logger.error("Traitement webhook échoué", {
         eventId,
         error: String(error?.stack || error),
         whatsapp:

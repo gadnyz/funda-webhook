@@ -25,7 +25,7 @@ if (require.main === module) {
   const app = createApp();
   app.server.on("error", (error) => {
     if (error.code === "EADDRINUSE") {
-      logger.error("Impossible de demarrer Funda: le port est deja utilise", {
+      logger.error("Impossible de démarrer Funda: le port est déjà utilisé", {
         host: app.config.host,
         port: app.config.port
       });
@@ -36,7 +36,7 @@ if (require.main === module) {
   });
 
   app.server.listen(app.config.port, app.config.host, () => {
-    logger.info("Funda WhatsApp MVP demarre", {
+    logger.info("Funda WhatsApp MVP démarré", {
       host: app.config.host,
       port: app.config.port,
       dryRun: app.config.whatsapp.dryRun,
@@ -45,7 +45,7 @@ if (require.main === module) {
   });
 
   const shutdown = () => {
-    logger.info("Arret du serveur Funda");
+    logger.info("Arrêt du serveur Funda");
     app.server.close(() => {
       app.db.close();
       process.exit(0);
